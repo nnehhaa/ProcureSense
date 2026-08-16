@@ -1,0 +1,12 @@
+streamlit
+pandas
+plotly
+ollama
+PyMuPDF
+langchain
+langchain-text-splitters
+chromadb
+sentence-transformers
+pypdf
+numpy
+torch
