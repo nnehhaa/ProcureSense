@@ -518,3 +518,62 @@
   0%, 80%, 100% { transform: scale(0); }
   40% { transform: scale(1); }
 }
+
+/* --- NEW STYLES FOR V2 --- */
+
+/* Role Badges */
+.role-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.05em;
+}
+.role-admin { background-color: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+.role-procurement { background-color: rgba(96, 165, 250, 0.2); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.3); }
+.role-legal { background-color: rgba(167, 139, 250, 0.2); color: #c4b5fd; border: 1px solid rgba(167, 139, 250, 0.3); }
+
+/* Library Table */
+.library-table th {
+  background-color: rgba(0,0,0,0.2);
+}
+.library-table tr:hover {
+  background-color: rgba(255,255,255,0.02);
+}
+
+/* Action Buttons */
+.action-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.action-btn.view-btn {
+  color: var(--color-accent-secondary);
+}
+.action-btn.view-btn:hover {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+.action-btn.delete-btn {
+  color: #ef4444;
+}
+.action-btn.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Badges */
+.badge {
+  background: rgba(255,255,255,0.1);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
