@@ -1,4 +1,5 @@
 import os
+import shutil
 import fitz
 
 
@@ -20,6 +21,11 @@ def extract_text_from_pdf_ocr(pdf_path: str) -> str:
         import pytesseract
         from PIL import Image
         import io
+
+        tesseract_cmd = os.getenv("TESSERACT_CMD") or shutil.which("tesseract")
+        if not tesseract_cmd:
+            return "[Scanned PDF detected - Tesseract is not installed or is not on PATH. Install it with 'brew install tesseract'.]"
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
         document = fitz.open(pdf_path)
         text = ""

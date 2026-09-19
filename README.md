@@ -69,6 +69,9 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
+# macOS OCR engine
+brew install tesseract
+
 ollama pull llama3
 ollama serve
 ```
