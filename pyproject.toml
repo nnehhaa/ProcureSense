@@ -2,7 +2,25 @@
 name = "procuresense"
 version = "0.1.0"
 description = "AI-powered procurement contract analysis platform"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "ollama",
+    "PyMuPDF",
+    "langchain-text-splitters",
+    "chromadb",
+    "sentence-transformers>=2.7",
+    "numpy",
+    "torch",
+    "python-docx",
+    "pytesseract",
+    "Pillow",
+    "passlib[bcrypt]",
+    "python-jose[cryptography]",
+    "sqlalchemy",
+]
 
 [tool.vercel]
 entrypoint = "api:app"
