@@ -5,44 +5,13 @@ def calculate_score(contract):
 
     score = 100
 
-    try:
+    def number(value, default):
+        match = re.search(r"\d+(?:\.\d+)?", str(value))
+        return float(match.group()) if match else default
 
-        sla = float(
-            re.search(
-                r"\d+\.?\d*",
-                str(contract["sla"])
-            ).group()
-        )
-
-    except:
-
-        sla = 99
-
-    try:
-
-        escalation = int(
-            re.search(
-                r"\d+",
-                str(contract["price_escalation"])
-            ).group()
-        )
-
-    except:
-
-        escalation = 0
-
-    try:
-
-        notice_days = int(
-            re.search(
-                r"\d+",
-                str(contract["notice_period"])
-            ).group()
-        )
-
-    except:
-
-        notice_days = 0
+    sla = number(contract.get("sla", "99%"), 99)
+    escalation = number(contract.get("price_escalation", "0%"), 0)
+    notice_days = number(contract.get("notice_period", "0 days"), 0)
 
     score -= escalation * 2
 
@@ -54,4 +23,4 @@ def calculate_score(contract):
 
         score -= 15
 
-    return max(score, 0)
+    return max(round(score), 0)

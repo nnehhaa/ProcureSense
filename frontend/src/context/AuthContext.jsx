@@ -31,6 +31,24 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const register = async (name, email, password, role) => {
+    const res = await fetch("http://127.0.0.1:8000/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password, role }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Registration failed");
+    }
+    const data = await res.json();
+    setUser(data.user);
+    setToken(data.token);
+    localStorage.setItem("ps_user", JSON.stringify(data.user));
+    localStorage.setItem("ps_token", data.token);
+    return data.user;
+  };
+
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -40,7 +58,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
+    <AuthContext.Provider value={{ user, token, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

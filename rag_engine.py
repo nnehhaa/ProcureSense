@@ -1,119 +1,148 @@
-"""
-rag_engine.py — RAG pipeline for ProcureSense.
-Flow: embed query → retrieve top-10 → rerank → evidence gate → LLM → citations.
-"""
+import json
+import re
 
 import ollama
+
 from embeddings import embed_query
-from vector_store import search_contract
 from reranker import rerank
+from vector_store import search_contract, search_with_filter
 
-# Evidence gate: minimum reranker score to consider chunk reliable
+NOT_FOUND_MSG = "Information not found in this contract."
 EVIDENCE_THRESHOLD = 0.05
-NOT_FOUND_MSG = "Information not found in the uploaded contracts."
 
 
-def ask_contract(question: str, source_file: str = None) -> dict:
-    """
-    Main RAG entry point.
+def _unique_candidates(candidates: list) -> list:
+    seen = set()
+    unique = []
+    for candidate in candidates:
+        key = (candidate.get("source_file"), candidate.get("chunk_index"), candidate.get("text", "").strip())
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
 
-    Args:
-        question: Natural language user question.
-        source_file: Optional — filter to a specific contract file.
 
-    Returns:
-        dict: {answer: str, sources: [{text, source_file, chunk_index, score}]}
-    """
+def _parse_json_response(content: str) -> dict:
+    cleaned = re.sub(r"```(?:json)?", "", content).strip().strip("`").strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}") + 1
+    if start == -1 or end <= start:
+        return {}
+    try:
+        return json.loads(cleaned[start:end])
+    except json.JSONDecodeError:
+        return {}
 
-    # Step 1: Embed the user question (with BGE query prefix)
-    query_embedding = embed_query(question)
 
-    # Step 2: Retrieve top-10 candidate chunks from ChromaDB
-    if source_file:
-        from vector_store import search_with_filter
-        results = search_with_filter(query_embedding, source_file=source_file, n_results=10)
-    else:
-        results = search_contract(query_embedding, n_results=10)
-
-    documents = results.get("documents", [])
-    metadatas = results.get("metadatas", [])
-
-    if not documents:
-        return {
-            "answer": NOT_FOUND_MSG,
-            "sources": []
-        }
-
-    # Step 3: Merge text + metadata into chunk dicts for reranker
-    candidates = []
-    for doc, meta in zip(documents, metadatas):
-        candidates.append({
-            "text": doc,
-            "source_file": meta.get("source_file", "unknown") if meta else "unknown",
-            "chunk_index": meta.get("chunk_index", 0) if meta else 0,
-        })
-
-    # Step 4: Rerank — cross-encoder scores and selects top-3
-    top_chunks = rerank(question, candidates, top_k=3)
-
-    # Step 5: Evidence gate — if best score is too low, no reliable evidence
-    if not top_chunks or top_chunks[0]["score"] < EVIDENCE_THRESHOLD:
-        return {
-            "answer": NOT_FOUND_MSG,
-            "sources": []
-        }
-
-    # Step 6: Build context from top-3 reranked chunks
-    context_parts = []
-    for i, chunk in enumerate(top_chunks):
-        context_parts.append(
-            f"[Source {i+1}: {chunk['source_file']}]\n{chunk['text']}"
+def _validated_sources(payload: dict, top_chunks: list, source_file: str) -> list:
+    sources = []
+    seen = set()
+    for citation in payload.get("citations", []):
+        excerpt = str(citation.get("excerpt", "")).strip()
+        matching_chunk = next(
+            (chunk for chunk in top_chunks if excerpt and excerpt in chunk.get("text", "")),
+            None,
         )
-    context_text = "\n\n---\n\n".join(context_parts)
+        if not matching_chunk:
+            continue
+        key = (source_file, excerpt)
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append({
+            "source_file": source_file,
+            "chunk_index": matching_chunk.get("chunk_index", 0),
+            "text": excerpt,
+            "excerpt": excerpt,
+            "relevance": round(float(matching_chunk.get("score", 0)), 4),
+        })
+        break
+    return sources
 
-    # Step 7: Build grounded prompt for LLM
-    prompt = f"""You are ProcureSense AI, an expert procurement contract analyst.
 
-You will be given relevant excerpts retrieved from procurement contracts and a user question.
-Answer the question clearly and accurately using ONLY the information in the contract excerpts below.
+def _answer_for_contract(question: str, top_chunks: list, source_file: str) -> dict:
+    if not top_chunks:
+        return {"source_file": source_file, "status": "not_found", "answer": NOT_FOUND_MSG, "sources": []}
 
-STRICT RULES:
-- NEVER return raw JSON. Always respond in clear, readable sentences.
-- ONLY use facts found in the excerpts below. Do not infer or hallucinate.
-- If the answer is not in the excerpts, say exactly: "Information not found in the uploaded contracts."
-- Be concise but thorough. Reference the source when possible.
+    context_text = "\n\n---\n\n".join(
+        f"[Source: {source_file}]\n{chunk['text']}" for chunk in top_chunks
+    )
+    prompt = f"""You are ProcureSense, an evidence-first contract analyst.
 
---- CONTRACT EXCERPTS ---
+Determine whether the answer to the user's question is explicitly present in the contract excerpt below.
+Return ONLY valid JSON with this exact shape:
+{{
+  "supported": true or false,
+  "answer": "a concise answer, or exactly '{NOT_FOUND_MSG}'",
+  "citations": [{{"source_file": "{source_file}", "excerpt": "an exact contiguous substring copied from the excerpt"}}]
+}}
+
+Rules:
+- Do not infer, generalize, or use outside knowledge.
+- Set supported to false when the requested information is absent or ambiguous.
+- When supported is false, use exactly '{NOT_FOUND_MSG}' and return an empty citations array.
+- Return only the smallest exact sentence or passage that proves the answer.
+- Every citation excerpt must be copied character-for-character from the contract excerpt.
+
+CONTRACT EXCERPT:
 {context_text}
---- END EXCERPTS ---
 
-User Question: {question}
+USER QUESTION: {question}
+"""
 
-Your Answer:"""
-
-    # Step 8: Generate with Ollama llama3
     response = ollama.chat(
         model="llama3",
         messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are ProcureSense AI, a procurement contract analyst. "
-                    "Always answer in clear, plain English sentences. "
-                    "Only use information from the provided contract excerpts. "
-                    "Never output raw JSON or code."
-                )
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
+            {"role": "system", "content": "Return only the requested JSON. Never invent facts or citations."},
+            {"role": "user", "content": prompt},
+        ],
     )
-
-    answer = response["message"]["content"]
-
+    parsed = _parse_json_response(response["message"]["content"])
+    sources = _validated_sources(parsed, top_chunks, source_file) if parsed.get("supported") else []
+    if not parsed.get("supported") or not sources:
+        return {"source_file": source_file, "status": "not_found", "answer": NOT_FOUND_MSG, "sources": []}
     return {
-        "answer": answer,
-        "sources": top_chunks
+        "source_file": source_file,
+        "status": "supported",
+        "answer": str(parsed.get("answer", NOT_FOUND_MSG)).strip(),
+        "sources": sources,
     }
+
+
+def ask_contract(question: str, source_file: str = None, allowed_source_files: list[str] | None = None) -> dict:
+    query_embedding = embed_query(question)
+    if source_file:
+        source_files = [source_file]
+    elif allowed_source_files is not None:
+        source_files = allowed_source_files
+    else:
+        results = search_contract(query_embedding, n_results=10)
+        source_files = sorted({
+            meta.get("source_file") for meta in results.get("metadatas", []) if meta and meta.get("source_file")
+        })
+
+    contract_results = []
+    for current_file in source_files:
+        results = search_with_filter(query_embedding, source_file=current_file, n_results=10)
+        candidates = [
+            {
+                "text": doc,
+                "source_file": current_file,
+                "chunk_index": meta.get("chunk_index", 0) if meta else 0,
+            }
+            for doc, meta in zip(results.get("documents", []), results.get("metadatas", []))
+        ]
+        top_chunks = [
+            chunk for chunk in rerank(question, _unique_candidates(candidates), top_k=3)
+            if float(chunk.get("score", 0)) >= EVIDENCE_THRESHOLD
+        ]
+        contract_results.append(_answer_for_contract(question, top_chunks, current_file))
+
+    supported = [result for result in contract_results if result["status"] == "supported"]
+    if not supported:
+        answer = "\n\n".join(f"{result['source_file']}: {NOT_FOUND_MSG}" for result in contract_results) or NOT_FOUND_MSG
+        return {"answer": answer, "sources": [], "results": contract_results}
+
+    answer = "\n\n".join(f"{result['source_file']}: {result['answer']}" for result in supported)
+    sources = [source for result in supported for source in result["sources"]]
+    return {"answer": answer, "sources": sources, "results": contract_results}

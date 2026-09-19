@@ -1,72 +1,100 @@
-"""
-auth.py — JWT-based authentication for ProcureSense (academic demo mode).
-Three hardcoded demo users: admin, procurement, legal.
-"""
-
 from datetime import datetime, timedelta
 from typing import Optional
+import uuid as uuid_lib
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-
 import bcrypt
+from sqlalchemy.orm import Session
 
-# Secret key — in production this would be env var
-SECRET_KEY = "procuresense-secret-key-2024-academic-demo"
+SECRET_KEY = "procuresense-jwt-secret-2024"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 480
 
-def get_password_hash(password: str) -> str:
+
+def _hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-# Demo users — hardcoded for academic presentation
-DEMO_USERS = {
-    "admin@demo.com": {
-        "user_id": "admin-001",
-        "email": "admin@demo.com",
-        "name": "Admin User",
-        "role": "admin",
-        "hashed_password": get_password_hash("admin123"),
-    },
-    "procurement@demo.com": {
-        "user_id": "proc-001",
-        "email": "procurement@demo.com",
-        "name": "Procurement Officer",
-        "role": "procurement",
-        "hashed_password": get_password_hash("proc123"),
-    },
-    "legal@demo.com": {
-        "user_id": "legal-001",
-        "email": "legal@demo.com",
-        "name": "Legal Reviewer",
-        "role": "legal",
-        "hashed_password": get_password_hash("legal123"),
-    },
+
+# Hardcoded admin account — always available
+BUILTIN_ADMIN = {
+    "user_id": "admin-001",
+    "email": "admin@procuresense.com",
+    "name": "Neha Shanavas",
+    "role": "admin",
+    "hashed_password": _hash("NehaAdmin@2024"),
 }
 
-# Role permissions map
 ROLE_PERMISSIONS = {
     "admin": ["upload", "delete", "view", "manage_users", "generate_reports", "chat", "evaluate"],
-    "procurement": ["view", "chat", "generate_reports", "evaluate"],
-    "legal": ["view", "chat", "evaluate"],
+    "procurement": ["view", "upload", "chat", "generate_reports", "evaluate"],
+    "legal": ["view", "chat"],
 }
 
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+VALID_ROLES = ["procurement", "legal"]
 
 
-def authenticate_user(email: str, password: str) -> Optional[dict]:
-    """Validate credentials and return user dict or None."""
-    user = DEMO_USERS.get(email)
-    if not user:
+def verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+
+
+def authenticate_user(email: str, password: str, db: Optional[Session] = None) -> Optional[dict]:
+    # Check built-in admin first
+    if email == BUILTIN_ADMIN["email"]:
+        if verify_password(password, BUILTIN_ADMIN["hashed_password"]):
+            return BUILTIN_ADMIN
         return None
-    if not verify_password(password, user["hashed_password"]):
-        return None
-    return user
+
+    # Check DB users
+    if db:
+        from database import User
+        db_user = db.query(User).filter(User.email == email).first()
+        if db_user and verify_password(password, db_user.hashed_password):
+            return {
+                "user_id": db_user.user_id,
+                "email": db_user.email,
+                "name": db_user.name,
+                "role": db_user.role,
+            }
+
+    return None
+
+
+def register_user(email: str, password: str, name: str, role: str, db: Session) -> dict:
+    """Register a new user. Returns user dict or raises ValueError."""
+    from database import User
+
+    if role not in VALID_ROLES:
+        raise ValueError(f"Invalid role '{role}'. Must be one of: {', '.join(VALID_ROLES)}")
+
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise ValueError("An account with this email already exists.")
+
+    if email == BUILTIN_ADMIN["email"]:
+        raise ValueError("This email address is reserved.")
+
+    user_id = str(uuid_lib.uuid4())
+    hashed = _hash(password)
+
+    new_user = User(
+        user_id=user_id,
+        email=email,
+        name=name,
+        role=role,
+        hashed_password=hashed,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {
+        "user_id": new_user.user_id,
+        "email": new_user.email,
+        "name": new_user.name,
+        "role": new_user.role,
+    }
 
 
 def create_token(user_id: str, role: str, email: str, name: str) -> str:
-    """Create a signed JWT access token."""
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": user_id,
@@ -79,7 +107,6 @@ def create_token(user_id: str, role: str, email: str, name: str) -> str:
 
 
 def verify_token(token: str) -> Optional[dict]:
-    """Decode and verify a JWT token. Returns payload or None."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
@@ -88,14 +115,4 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 def has_permission(role: str, action: str) -> bool:
-    """Check if a role has permission to perform an action."""
     return action in ROLE_PERMISSIONS.get(role, [])
-
-
-def get_demo_credentials() -> list:
-    """Return demo credentials for display on the login page."""
-    return [
-        {"email": "admin@demo.com", "password": "admin123", "role": "Admin", "permissions": "Full access"},
-        {"email": "procurement@demo.com", "password": "proc123", "role": "Procurement", "permissions": "View, Chat, Reports"},
-        {"email": "legal@demo.com", "password": "legal123", "role": "Legal", "permissions": "View, Chat only"},
-    ]

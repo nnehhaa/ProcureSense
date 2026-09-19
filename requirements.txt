@@ -1,16 +1,11 @@
 fastapi
 uvicorn[standard]
 python-multipart
-streamlit
-pandas
-plotly
 ollama
 PyMuPDF
-langchain
 langchain-text-splitters
 chromadb
 sentence-transformers>=2.7
-pypdf
 numpy
 torch
 python-docx

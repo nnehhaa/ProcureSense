@@ -1,15 +1,9 @@
-"""
-report_generator.py — Contract report export for ProcureSense.
-Generates CSV and JSON summary reports for individual or all contracts.
-"""
-
 import csv
 import io
 import json
 from datetime import datetime
 
 
-# All 15 extracted fields + computed fields
 REPORT_FIELDS = [
     "id", "filename", "vendor", "agreement_type",
     "effective_date", "renewal_date", "notice_period", "auto_renewal",
@@ -21,10 +15,6 @@ REPORT_FIELDS = [
 
 
 def generate_csv_report(contracts: list) -> bytes:
-    """
-    Generate a CSV report for a list of contract dicts or ORM objects.
-    Returns: bytes (UTF-8 encoded CSV).
-    """
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=REPORT_FIELDS, extrasaction="ignore")
     writer.writeheader()
@@ -35,7 +25,6 @@ def generate_csv_report(contracts: list) -> bytes:
         else:
             row = {field: c.get(field, "") for field in REPORT_FIELDS}
 
-        # Serialize datetime
         if isinstance(row.get("created_at"), datetime):
             row["created_at"] = row["created_at"].isoformat()
 
@@ -45,10 +34,7 @@ def generate_csv_report(contracts: list) -> bytes:
 
 
 def generate_summary_report(contract) -> dict:
-    """
-    Generate a structured JSON summary for a single contract ORM object or dict.
-    Returns: dict with all fields organized by section.
-    """
+
     if hasattr(contract, "__dict__"):
         data = {field: getattr(contract, field, "") for field in REPORT_FIELDS}
     else:

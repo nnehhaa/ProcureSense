@@ -1,21 +1,40 @@
-"""
-extractor.py — LLM-powered structured extraction of 15 contract fields.
-Uses Ollama llama3 to extract all fields from contract text.
-"""
-
 import json
 import re
 import ollama
 
 
-def extract_contract_details(text: str) -> dict:
-    """
-    Extract 15 structured fields from contract text using llama3.
-    Returns a dict with all fields, falling back to defaults for missing ones.
-    """
+def _risk_excerpt(text: str) -> str:
+    keywords = (
+        "auto-renew", "renewal", "notice", "price escalation", "price increase",
+        "sla", "uptime", "penalt", "termination", "liability", "indemnif",
+        "damages", "compliance",
+    )
+    lines = [line.strip() for line in text.splitlines() if any(keyword in line.lower() for keyword in keywords)]
+    return "\n".join(lines[:80])
 
-    # Truncate to avoid token limits while keeping the most informative sections
+
+def _apply_labeled_risk_fields(details: dict, text: str) -> dict:
+    patterns = {
+        "auto_renewal": r"auto[- ]?renewal\s*:\s*(.+)",
+        "price_escalation": r"(?:price escalation|price increase)\s*:\s*(.+)",
+        "sla": r"(?:sla|uptime(?: commitment)?)\s*:\s*(.+)",
+        "notice_period": r"notice period\s*:\s*(.+)",
+        "sla_penalties": r"sla penalties?\s*:\s*(.+)",
+        "termination_clause": r"termination clause\s*:\s*(.+)",
+        "liability_clause": r"liability clause\s*:\s*(.+)",
+        "compliance_clause": r"compliance clause\s*:\s*(.+)",
+    }
+    for line in text.splitlines():
+        for field, pattern in patterns.items():
+            match = re.search(pattern, line, re.IGNORECASE)
+            if match and match.group(1).strip():
+                details[field] = match.group(1).strip()
+    return details
+
+
+def extract_contract_details(text: str) -> dict:
     truncated_text = text[:8000] if len(text) > 8000 else text
+    risk_excerpt = _risk_excerpt(text)
 
     prompt = f"""You are a precision procurement contract data extractor.
 
@@ -45,6 +64,9 @@ Never leave a field empty — always use "Not specified" as fallback.
 
 Contract:
 {truncated_text}
+
+Risk-related clauses found throughout the document:
+{risk_excerpt}
 """
 
     default_contract = {
@@ -56,7 +78,7 @@ Contract:
         "auto_renewal": "false",
         "price_escalation": "0%",
         "payment_terms": "Not specified",
-        "sla": "99%",
+        "sla": "Not specified",
         "uptime_commitment": "Not specified",
         "response_time": "Not specified",
         "sla_penalties": "Not specified",
@@ -85,30 +107,27 @@ Contract:
         )
 
         answer = response["message"]["content"].strip()
-
-        # Strip markdown code fences if present
         cleaned = re.sub(r"```(?:json)?", "", answer).strip()
         cleaned = cleaned.strip("`").strip()
 
-        # Extract the JSON object
         start = cleaned.find("{")
         end = cleaned.rfind("}") + 1
 
         if start == -1 or end == 0:
-            print("[extractor] No JSON object found in response:", cleaned[:300])
-            return default_contract
+            return _apply_labeled_risk_fields(default_contract, text)
 
         json_text = cleaned[start:end]
         extracted = json.loads(json_text)
+        if not isinstance(extracted, dict):
+            return _apply_labeled_risk_fields(default_contract, text)
 
-        # Merge into defaults (ensures all 15 fields always present)
         for key, value in extracted.items():
+            if key not in default_contract:
+                continue
             if value and str(value).strip() and str(value).strip() != "":
                 default_contract[key] = value
 
-        print(f"[extractor] Successfully extracted {len(extracted)} fields for vendor: {default_contract.get('vendor')}")
-        return default_contract
+        return _apply_labeled_risk_fields(default_contract, text)
 
-    except Exception as e:
-        print(f"[extractor] Extraction failed: {str(e)}")
-        return default_contract
+    except Exception:
+        return _apply_labeled_risk_fields(default_contract, text)

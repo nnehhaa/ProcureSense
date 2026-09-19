@@ -15,9 +15,7 @@ import ContractDetailPage from "./pages/ContractDetailPage";
 import DashboardPage from "./pages/DashboardPage";
 import ChatPage from "./pages/ChatPage";
 import RenewalPage from "./pages/RenewalPage";
-import AboutPage from "./pages/AboutPage";
 import UploadPage from "./pages/UploadPage";
-import EvaluationPage from "./pages/EvaluationPage";
 
 function App() {
   return (
@@ -27,30 +25,41 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/about" element={<AboutPage />} />
 
             <Route path="/contracts" element={
-              <ProtectedRoute><ContractLibraryPage /></ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin", "procurement", "legal"]}>
+                <ContractLibraryPage />
+              </ProtectedRoute>
             } />
+
             <Route path="/contracts/:id" element={
-              <ProtectedRoute><ContractDetailPage /></ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin", "procurement", "legal"]}>
+                <ContractDetailPage />
+              </ProtectedRoute>
             } />
+
             <Route path="/dashboard" element={
-              <ProtectedRoute><DashboardPage /></ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin", "procurement", "legal"]}>
+                <DashboardPage />
+              </ProtectedRoute>
             } />
+
             <Route path="/chat" element={
-              <ProtectedRoute><ChatPage /></ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin", "procurement", "legal"]}>
+                <ChatPage />
+              </ProtectedRoute>
             } />
+
             <Route path="/renewals" element={
-              <ProtectedRoute><RenewalPage /></ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin", "procurement", "legal"]}>
+                <RenewalPage />
+              </ProtectedRoute>
             } />
-            <Route path="/evaluate" element={
-              <ProtectedRoute><EvaluationPage /></ProtectedRoute>
-            } />
-            
-            {/* Upload is restricted to admin or procurement roles, not legal */}
+
             <Route path="/upload" element={
-              <ProtectedRoute><UploadPage /></ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin", "procurement"]}>
+                <UploadPage />
+              </ProtectedRoute>
             } />
           </Routes>
         </Layout>
