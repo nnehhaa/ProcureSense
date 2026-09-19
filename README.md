@@ -102,12 +102,6 @@ The Vite development UI runs at `http://localhost:5173`.
 
 Procurement and Legal users can register from the login page. Admin registration is intentionally disabled; the built-in administrator is provisioned directly.
 
-The current built-in administrator is:
-
-```text
-Email: admin@procuresense.com
-Password: NehaAdmin@2024
-```
 
 Application data access is filtered by `uploaded_by`: administrators can access the complete workspace, while Procurement and Legal users can access contracts they uploaded. The same visibility policy is applied to the contract library, contract details, reports, renewal alerts, dashboard obligations, and chatbot source scope.
 
